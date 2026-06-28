@@ -111,9 +111,8 @@ function closeModal(id) {
 }
 window.openModal=openModal; window.closeModal=closeModal;
 
-// ── 로그인 탭 전환 (부드러운 페이드) ──
+// ── 로그인 탭 전환 (부드러운 높이+페이드 애니메이션) ──
 window.switchLoginTab = function(tab) {
-  // 배경 전환
   const loginScreen = document.getElementById('screen-login');
   loginScreen.classList.toggle('mode-student', tab==='student');
   loginScreen.classList.toggle('mode-teacher', tab==='teacher');
@@ -127,16 +126,40 @@ window.switchLoginTab = function(tab) {
   const hideEl = tab==='student' ? tEl : sEl;
   const showEl = tab==='student' ? sEl : tEl;
 
-  // 현재 폼 페이드 아웃
-  hideEl.style.opacity='0'; hideEl.style.transform='translateY(8px)';
+  // 현재 높이 고정
+  const wrap = hideEl.closest('.login-card') || hideEl.parentElement;
+  const startH = wrap.offsetHeight;
+  wrap.style.height = startH + 'px';
+
+  // 페이드 아웃
+  hideEl.style.opacity='0';
+  hideEl.style.transform='translateY(6px)';
+
   setTimeout(()=>{
     hideEl.style.display='none';
     showEl.style.display='flex';
-    showEl.style.opacity='0'; showEl.style.transform='translateY(8px)';
-    requestAnimationFrame(()=>requestAnimationFrame(()=>{
-      showEl.style.opacity='1'; showEl.style.transform='translateY(0)';
-    }));
-  }, 250);
+    showEl.style.opacity='0';
+    showEl.style.transform='translateY(6px)';
+
+    // 목표 높이 계산
+    requestAnimationFrame(()=>{
+      const endH = wrap.scrollHeight;
+      wrap.style.transition='height 0.35s cubic-bezier(0.4,0,0.2,1)';
+      wrap.style.height = endH + 'px';
+
+      // 페이드 인
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{
+        showEl.style.opacity='1';
+        showEl.style.transform='translateY(0)';
+      }));
+
+      // 높이 고정 해제
+      setTimeout(()=>{
+        wrap.style.height='';
+        wrap.style.transition='';
+      }, 380);
+    });
+  }, 220);
 }
 
 // ── 학생 로그인 ──
@@ -149,6 +172,7 @@ window.loginStudent = async function() {
     const snap=await getDocs(query(collection(db,'students'),where('name','==',name),where('pw','==',pw)));
     if(snap.empty){showToast('이름 또는 암호가 맞지 않아요 😥');return;}
     state.currentUser={type:'student',name};
+    sessionStorage.setItem('wc_user', JSON.stringify({type:'student',name}));
     await renderStudentScreen();
     showScreen('student');
     startStudentListeners(name);
@@ -161,6 +185,7 @@ window.loginTeacher = async function() {
   try{const s=await getDoc(doc(db,'settings','main'));if(s.exists())state.teacherPw=s.data().teacherPw||'teacher1234';}catch(e){}
   if(pw!==state.teacherPw){showToast('비밀번호가 맞지 않아요');return;}
   state.currentUser={type:'teacher'};
+  sessionStorage.setItem('wc_user', JSON.stringify({type:'teacher'}));
   await renderTeacherScreen();
   showScreen('teacher');
   startTeacherListeners();
@@ -169,6 +194,7 @@ window.loginTeacher = async function() {
 window.logout = function() {
   if(state.unsubFeedback){state.unsubFeedback();state.unsubFeedback=null;}
   if(state.unsubSubmissions){state.unsubSubmissions();state.unsubSubmissions=null;}
+  sessionStorage.removeItem('wc_user');
   state.currentUser=null; state.selectedFiles={1:null,2:null,3:null};
   document.getElementById('student-name').value='';
   document.getElementById('student-pw').value='';
@@ -195,8 +221,8 @@ window.changePassword = async function() {
 // ── 학생 화면 렌더 ──
 async function renderStudentScreen() {
   const name=state.currentUser.name;
-  document.getElementById('student-badge').textContent=name;
-  document.getElementById('student-greeting').textContent=`안녕하세요, ${name}님!`;
+  document.getElementById('student-badge').textContent=name+' 학생';
+  document.getElementById('student-greeting').textContent=`안녕하세요, ${name} 학생!`;
   try{
     const subSnap=await getDocs(query(collection(db,'submissions'),where('student','==',name)));
     state.submissions=subSnap.docs.map(d=>({id:d.id,...d.data()}));
@@ -311,7 +337,7 @@ function buildFeedbackCard(fb){
   card.innerHTML=`
     <div class="fb-header ${sc}">
       <div class="fb-round">${round}차 피드백 · ${fb.type||'글쓰기'}</div>
-      <div class="fb-title">${fb.student}님의 글쓰기 코칭 결과</div>
+      <div class="fb-title">${fb.student} 학생의 글쓰기 코칭 결과</div>
       <div class="fb-meta">${formatDate(fb.date)}</div>
     </div>
     <div class="fb-body">
@@ -669,8 +695,30 @@ document.addEventListener('DOMContentLoaded',()=>{
   sEl.style.cssText='display:flex;opacity:1;transform:translateY(0);transition:opacity 0.25s ease,transform 0.25s ease;';
   tEl.style.cssText='display:none;opacity:0;transform:translateY(8px);transition:opacity 0.25s ease,transform 0.25s ease;';
 
-  loadInitialData();
-  showScreen('login');
+  loadInitialData().then(async () => {
+    // 새로고침 후 세션 복원
+    const savedUser = sessionStorage.getItem('wc_user');
+    if (savedUser) {
+      try {
+        const user = JSON.parse(savedUser);
+        state.currentUser = user;
+        if (user.type === 'student') {
+          await renderStudentScreen();
+          showScreen('student');
+          startStudentListeners(user.name);
+        } else if (user.type === 'teacher') {
+          await renderTeacherScreen();
+          showScreen('teacher');
+          startTeacherListeners();
+        }
+      } catch(e) {
+        sessionStorage.removeItem('wc_user');
+        showScreen('login');
+      }
+    } else {
+      showScreen('login');
+    }
+  });
 });
 </script>
 
@@ -738,12 +786,13 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--paper);color:var(--i
 .login-hero h1{font-size:32px;font-weight:700;color:white;margin-bottom:8px;text-shadow:0 2px 12px rgba(0,0,0,0.15);}
 .login-hero p{font-size:14px;color:rgba(255,255,255,0.9);line-height:1.7;text-shadow:0 1px 4px rgba(0,0,0,0.1);}
 
-.login-card{background:white;border-radius:24px;padding:32px;box-shadow:var(--shadow-lg);}
+.login-card{background:white;border-radius:24px;padding:32px;box-shadow:var(--shadow-lg);overflow:hidden;}
 .login-tabs{display:flex;background:var(--paper);border-radius:var(--radius-sm);padding:4px;margin-bottom:24px;}
 .login-tab{flex:1;padding:10px;text-align:center;font-size:14px;font-weight:700;font-family:'Noto Sans KR',sans-serif;border:none;background:none;cursor:pointer;border-radius:8px;color:var(--ink-soft);transition:all 0.3s ease;}
 .login-tab.active{background:white;color:var(--ink);box-shadow:var(--shadow-sm);}
 
-.login-form{display:flex;flex-direction:column;gap:14px;}
+.login-form-wrap{display:grid;grid-template-rows:1fr;transition:grid-template-rows 0.35s ease;}
+.login-form{display:flex;flex-direction:column;gap:14px;overflow:hidden;transition:opacity 0.25s ease,transform 0.25s ease;}
 .form-group{display:flex;flex-direction:column;gap:6px;}
 .form-group label{font-size:13px;font-weight:700;color:var(--ink-soft);}
 .form-input{padding:12px 16px;border:2px solid var(--line);border-radius:var(--radius-sm);font-size:15px;font-family:'Noto Sans KR',sans-serif;background:white;color:var(--ink);transition:border-color 0.2s,box-shadow 0.2s;outline:none;}
@@ -765,7 +814,8 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--paper);color:var(--i
 .btn-pw-setting{color:var(--ink-soft);} .btn-pw-setting:hover{color:var(--s1);border-color:var(--s1);}
 
 /* 환영 배너 */
-.student-welcome-banner{background:var(--beige);border-bottom:1px solid var(--beige-dark);padding:20px 28px;text-align:center;transition:background 0.3s;cursor:default;}
+.student-welcome-banner-wrap{padding:20px 28px 0;max-width:1400px;margin:0 auto;width:100%;}
+.student-welcome-banner{background:var(--beige);border-radius:var(--radius);border:1px solid var(--beige-dark);padding:18px 28px;text-align:center;transition:background 0.3s;cursor:default;}
 .student-welcome-banner:hover{background:var(--beige-dark);}
 .student-welcome-banner h2{font-size:22px;font-weight:700;color:var(--ink);margin-bottom:4px;}
 .student-welcome-banner p{font-size:14px;color:var(--ink-soft);}
@@ -927,9 +977,11 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--paper);color:var(--i
       <button class="btn-logout" onclick="logout()">로그아웃</button>
     </div>
   </header>
-  <div class="student-welcome-banner">
-    <h2 id="student-greeting">안녕하세요!</h2>
-    <p>단계별로 글을 제출하고 피드백을 받아요.</p>
+  <div class="student-welcome-banner-wrap">
+    <div class="student-welcome-banner">
+      <h2 id="student-greeting">안녕하세요!</h2>
+      <p>단계별로 글을 제출하고 피드백을 받아요.</p>
+    </div>
   </div>
   <div class="student-layout">
     <div class="step-panel"><div id="step-cards-area"></div></div>
@@ -1076,7 +1128,7 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--paper);color:var(--i
     <div class="feedback-notify-body">
       <span class="feedback-notify-icon">🎉</span>
       <div class="feedback-notify-text" id="notify-text">피드백이 도착했어요!</div>
-      <div class="feedback-notify-sub" id="notify-sub">선생님이 글을 꼼꼼하게 읽고 피드백을 보내주셨어요.</div>
+      <div class="feedback-notify-sub" id="notify-sub">선생님이 꼼꼼하게 읽고 피드백을 보내주셨어요.</div>
       <button class="btn-confirm" onclick="closeNotifyModal()">바로 확인하기</button>
     </div>
   </div>
