@@ -89,7 +89,7 @@ function applyLogoText(text) {
 }
 function applyLogoBgImage(url) {
   document.querySelectorAll('.big-icon').forEach(el=>{
-    el.innerHTML = '<img src="'+url+'" style="width:80px;height:80px;object-fit:contain;border-radius:16px;filter:drop-shadow(0 4px 16px rgba(0,0,0,0.2));">';
+    el.innerHTML = '<img src="'+url+'" style="width:96px;height:96px;object-fit:contain;border-radius:16px;">';
   });
   document.querySelectorAll('.logo-icon').forEach(el=>{
     el.innerHTML = '<img src="'+url+'" style="width:28px;height:28px;object-fit:contain;border-radius:6px;">';
@@ -844,8 +844,8 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--paper);color:var(--i
 
 .login-wrap{width:100%;max-width:420px;}
 .login-hero{text-align:center;margin-bottom:36px;}
-.login-hero .big-icon{font-size:96px;display:block;margin-bottom:16px;}
-@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+.login-hero .big-icon{font-size:96px;width:96px;height:96px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;}
+
 .login-hero h1{font-size:32px;font-weight:700;color:white;margin-bottom:8px;text-shadow:0 2px 12px rgba(0,0,0,0.15);}
 .login-hero p{font-size:14px;color:rgba(255,255,255,0.9);line-height:1.7;text-shadow:0 1px 4px rgba(0,0,0,0.1);}
 
